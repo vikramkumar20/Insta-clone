@@ -1,7 +1,8 @@
 import sharp from "sharp";
-import cloudinary from "../utils/cloudinary";
+import cloudinary from "../utils/cloudinary.js";
 import {Post} from "../models/post.model.js";
 import { User } from "../models/user.model.js";
+import { Comment } from "../models/comment.model.js";
 
 export const addNewPost= async(req,resp)=>{
     try{
@@ -202,8 +203,68 @@ export const deletePost= async (req,resp)=>{
         }
 
         // check if the logged in user is the owner of the post
-        
+        if(post.author.toString() != authorId){
+            return resp.status(403).json({
+                message: 'Unauthorized'
+            })
+        }
+
+        // delete post
+        await Post.findByIdAndDelete(postId);
+
+        //remove the post id form user all post
+        let user= await User.findById(authorId);
+        user.posts = user.posts.filter(id=> id.toString()!= postId);
+        await user.save();
+
+        //delete associated comments
+        await Comment.deleteMany({post: postId});
+
+        return resp.status(200).json({
+            message: 'Post deleted',
+            success: true,
+        })
+
     }catch(error){
         console.log(error);
     }
 }
+
+export const bookmarkPost= async (req,resp)=>{
+    try{
+        const postId= req.params.id;
+        const authorId= req.id;
+        const post= await Post.findById(postId);
+        if(!post){
+            return resp.status(404).json({
+                message: 'Post not found',
+                success: false
+            })
+        }
+
+        const user= await User.findById(authorId);
+        if(user.bookmarks.includes(post._id)){
+            // if already bookmarked -> then remove from the bookmark
+            await user.updateOne({$pull:{bookmarks:post._id}});
+            await user.save();
+            return resp.status(200).json({
+                type:'unsaved',
+                message: 'Post removed from bookmark',
+                success: true
+            })
+        }else{
+            // if not bookmarked -> then bookmark it.
+            await user.updateOne({$addToSet:{bookmarks:post._id}});
+            await user.save();
+            return resp.status(200).json({
+                type:'saved',
+                message: 'Post bookmarked',
+                success: true
+            })
+        }
+    }catch(error){
+        console.log(error);
+    }
+}
+
+// Do API testing of post's functionalities by yourself.
